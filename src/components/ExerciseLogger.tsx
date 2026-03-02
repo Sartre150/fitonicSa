@@ -23,10 +23,10 @@ interface ExerciseItem {
     name: string;
     body_part: string;
   };
-  warmup_sets: number;
+  warmup_sets: string | number;
   working_sets: number;
-  target_reps: number;
-  target_rpe: number;
+  target_reps: string | number;
+  target_rpe: string | number;
   program_days: {
     day_name: string;
   };
