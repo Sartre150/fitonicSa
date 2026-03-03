@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { createClient } from "@/utils/supabase";
-import { X, Save, Plus, Trash2, Loader2 } from "lucide-react";
+import { X, Save, Plus, Trash2, Loader2, Calendar } from "lucide-react";
 
 type SetType = "Warmup" | "Normal";
 
@@ -50,6 +50,27 @@ interface ExerciseLoggerProps {
 export default function ExerciseLogger({ exercise, onClose }: ExerciseLoggerProps) {
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
+  const [unit, setUnit] = useState<'lbs' | 'kg'>('lbs');
+
+  // Cargar unidad del localStorage
+  useEffect(() => {
+    const savedUnit = (localStorage.getItem('weightUnit') as 'lbs' | 'kg') || 'lbs';
+    setUnit(savedUnit);
+  }, []);
+
+  const convertToLbs = (value: number): number => {
+    return unit === 'kg' ? Number((value / 0.453592).toFixed(1)) : value;
+  };
+
+  // Obtener la fecha actual formateada
+  const todayFormatted = useMemo(() => {
+    const today = new Date();
+    return today.toLocaleDateString("es-ES", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }, []);
 
   const [sets, setSets] = useState<SetRow[]>([
     { weight: "", reps: "", rpe: "", type: "Warmup" },
@@ -138,7 +159,7 @@ export default function ExerciseLogger({ exercise, onClose }: ExerciseLoggerProp
             exercise_id: exercise.exercise_id,
             set_number: index + 1,
             set_type: s.type, // "Warmup" | "Normal"
-            weight_lbs: weight,
+            weight_lbs: convertToLbs(weight),
             reps_done: reps,
             rpe_felt: rpe !== null && Number.isNaN(rpe) ? null : rpe,
           };
@@ -165,16 +186,22 @@ export default function ExerciseLogger({ exercise, onClose }: ExerciseLoggerProp
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div className="bg-zinc-900 w-full max-w-md rounded-3xl border border-zinc-800 overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
         {/* Header */}
-        <div className="p-6 bg-zinc-950 border-b border-zinc-800 flex justify-between items-center shrink-0">
-          <div>
+        <div className="p-6 bg-zinc-950 border-b border-zinc-800 flex justify-between items-start shrink-0">
+          <div className="flex-1">
             <h3 className="text-xl font-bold text-white">{exercise?.exercises?.name}</h3>
-            <p className="text-indigo-400 text-xs font-mono uppercase tracking-wider">
+            <div className="flex items-center gap-2 mt-2">
+              <Calendar size={14} className="text-emerald-400" />
+              <p className="text-emerald-400 text-xs font-semibold capitalize">
+                {todayFormatted}
+              </p>
+            </div>
+            <p className="text-indigo-400 text-xs font-mono uppercase tracking-wider mt-2">
               Meta: {exercise?.target_reps} Reps @ RPE {exercise?.target_rpe}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 bg-zinc-800 rounded-full text-zinc-400 hover:text-white"
+            className="p-2 bg-zinc-800 rounded-full text-zinc-400 hover:text-white flex-shrink-0"
           >
             <X size={20} />
           </button>
@@ -184,7 +211,7 @@ export default function ExerciseLogger({ exercise, onClose }: ExerciseLoggerProp
         <div className="p-4 overflow-y-auto custom-scrollbar flex-1">
           <div className="grid grid-cols-[30px_1fr_1fr_1fr_20px] gap-3 mb-2 text-center text-xs text-zinc-500 font-bold uppercase tracking-wider px-1">
             <span>#</span>
-            <span>Lbs</span>
+            <span>{unit}</span>
             <span>Reps</span>
             <span>RPE</span>
             <span></span>

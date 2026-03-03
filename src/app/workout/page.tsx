@@ -32,7 +32,6 @@ export default function WorkoutPage() {
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const[selectedExercise, setSelectedExercise] = useState<WorkoutExercise | null>(null);
   const [loading, setLoading] = useState(true);
-  const [week, setWeek] = useState(1);
   
   const supabase = createClient();
 
@@ -76,16 +75,28 @@ export default function WorkoutPage() {
         </div>
       </header>
 
-      {/* Selector de Semana */}
-      <div className="flex items-center justify-between bg-zinc-900/50 p-3 rounded-xl border border-zinc-800 mb-4">
-        <span className="text-sm font-bold text-zinc-400">Semana Actual:</span>
-        <div className="flex items-center gap-3">
-          <button onClick={() => setWeek(w => Math.max(1, w - 1))} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-lg font-bold hover:bg-zinc-700">-</button>
-          <span className="font-mono text-xl font-black text-indigo-400 w-6 text-center">{week}</span>
-          <button onClick={() => setWeek(w => Math.min(12, w + 1))} className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-lg font-bold hover:bg-zinc-700">+</button>
+      {/* Selector de Fecha de la Semana */}
+      <div className="flex items-center justify-between bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 mb-4">
+        <div>
+          <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider block">Semana del</span>
+          <span className="font-bold text-white">
+            {/* Lógica rápida para mostrar Lunes a Domingo de la semana actual */}
+            {(() => {
+              const today = new Date();
+              const day = today.getDay() || 7; // Convertir domingo (0) a 7
+              const monday = new Date(today);
+              monday.setDate(today.getDate() - day + 1);
+              const sunday = new Date(today);
+              sunday.setDate(today.getDate() - day + 7);
+              
+              return `${monday.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} - ${sunday.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}`;
+            })()}
+          </span>
+        </div>
+        <div className="bg-indigo-600/20 text-indigo-400 px-3 py-1 rounded-lg text-xs font-bold border border-indigo-500/20">
+          HOY
         </div>
       </div>
-
       {/* TABS DE DIAS (Selector horizontal) */}
       <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-2 mb-6 snap-x">
         {days.map((day) => (
