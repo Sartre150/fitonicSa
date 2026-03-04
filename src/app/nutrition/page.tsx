@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/utils/supabase";
+import { createClient } from "@/utils/supabase/client";
 import { UtensilsCrossed, Edit3, X } from "lucide-react";
 
 export default function NutritionPage() {

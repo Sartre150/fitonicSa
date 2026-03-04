@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { createClient } from "@/utils/supabase";
+import { createClient } from "@/utils/supabase/client";
 import { TrendingUp, ChevronDown, Database, Activity, Dumbbell } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 

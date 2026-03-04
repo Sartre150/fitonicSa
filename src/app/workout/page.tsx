@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { createClient } from "@/utils/supabase";
+import { createClient } from "@/utils/supabase/client";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import ExerciseLogger from "@/components/ExerciseLogger";

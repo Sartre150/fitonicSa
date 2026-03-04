@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { createClient } from "@/utils/supabase";
+import { createClient } from "@/utils/supabase/client";
 import { X, Save, Plus, Trash2, Loader2, Calendar } from "lucide-react";
 
 type SetType = "Warmup" | "Normal";
