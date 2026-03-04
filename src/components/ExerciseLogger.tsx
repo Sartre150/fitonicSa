@@ -110,7 +110,11 @@ export default function ExerciseLogger({ exercise, onClose }: ExerciseLoggerProp
       return;
     }
 
-    const today = new Date().toISOString().split("T")[0];
+    // Crea una fecha local (respetando tu zona horaria)
+    const dateObj = new Date();
+    const offset = dateObj.getTimezoneOffset();
+    const localDate = new Date(dateObj.getTime() - (offset*60*1000));
+    const today = localDate.toISOString().split("T")[0];
 
     try {
       // 1) Buscar workout de hoy (si existe)

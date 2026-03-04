@@ -21,7 +21,11 @@ export default function NutritionPage() {
       setGoals({ protein: profile.daily_protein, carbs: profile.daily_carbs, fats: profile.daily_fats, calories: profile.daily_calories });
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    // Crea una fecha local (respetando tu zona horaria)
+    const dateObj = new Date();
+    const offset = dateObj.getTimezoneOffset();
+    const localDate = new Date(dateObj.getTime() - (offset*60*1000));
+    const today = localDate.toISOString().split('T')[0];
     const { data: nutrition } = await supabase.from("daily_nutrition").select("*").eq("user_id", user.id).eq("date", today).maybeSingle();
     
     if (nutrition) setMacros(nutrition);
@@ -37,7 +41,12 @@ export default function NutritionPage() {
     }
     setMacros(newMacros);
     const { data: { user } } = await supabase.auth.getUser();
-    await supabase.from("daily_nutrition").update(newMacros).eq("user_id", user?.id).eq("date", new Date().toISOString().split('T')[0]);
+    // Calcular fecha local para la consulta
+    const dateObjUpdate = new Date();
+    const offsetUpdate = dateObjUpdate.getTimezoneOffset();
+    const localDateUpdate = new Date(dateObjUpdate.getTime() - (offsetUpdate*60*1000));
+    const todayUpdate = localDateUpdate.toISOString().split('T')[0];
+    await supabase.from("daily_nutrition").update(newMacros).eq("user_id", user?.id).eq("date", todayUpdate);
   };
 
   const saveGoals = async () => {
