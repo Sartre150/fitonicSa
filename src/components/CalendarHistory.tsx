@@ -110,7 +110,7 @@ export default function CalendarHistory({ logs, unit, onEdit }: CalendarHistoryP
                       <tbody className="divide-y divide-zinc-800/50">
                         {muscleLogs.map((log) => (
                           <tr key={log.id} className="hover:bg-zinc-800/30 transition-colors group">
-                            <td className="px-4 py-3 font-medium text-white max-w-[120px] truncate pl-4 whitespace-nowrap">
+                            <td className="px-4 py-3 font-medium text-white pl-4 whitespace-nowrap">
                               {log.exercises.name}
                             </td>
                             <td className="px-2 py-3 text-center whitespace-nowrap">

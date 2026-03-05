@@ -1,16 +1,14 @@
+"use client";
 
-import React from "react";
-import type { JSX } from "react";
-
-import { useState, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { Calendar, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import html2canvas from "html2canvas";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LineChart, Line } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, LineChart, Line } from "recharts";
 
-// Interfaces reutilizadas para mantener consistencia
+// Interfaces reutilizadas
 interface ChartPoint { date: string; orm: number }
 interface ExerciseStats {
   name: string;
@@ -38,9 +36,12 @@ interface ReportGeneratorProps {
 
 type ReportPeriod = "week" | "month";
 
-export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGeneratorProps): JSX.Element {
-  const barChartRef = useRef<HTMLDivElement>(null);
-  const lineChartRef = useRef<HTMLDivElement>(null);
+const BAR_COLORS = ["#6366f1", "#8b5cf6", "#d946ef", "#f43f5e", "#f97316", "#eab308", "#10b981", "#06b6d4", "#3b82f6"];
+
+export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGeneratorProps) {
+  // Referencias para capturar gráficas ocultas
+  const chartsContainerRef = useRef<HTMLDivElement>(null);
+  
   const [period, setPeriod] = useState<ReportPeriod>("month");
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -54,11 +55,8 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
 
   const filterDataByPeriod = (period: ReportPeriod): WorkoutLog[] => {
     const { startDate } = getDateRange(period);
-    // Filtrar logs por fecha
     return logs.filter(log => {
-      // Aseguramos compatibilidad de fechas
       const logDate = new Date(log.user_workouts?.date); 
-      // Ajuste simple para comparar solo fechas sin horas
       return logDate >= startDate;
     });
   };
@@ -68,7 +66,7 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
   // --- GENERAR EXCEL ---
   const generateExcel = () => {
     const filteredLogs = filterDataByPeriod(period);
-
+    
     // Hoja 1: Resumen
     const summaryData = Array.from(exerciseStats.values())
       .filter(stats => stats.dataPoints.length > 0)
@@ -108,19 +106,22 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
       const filteredLogs = filterDataByPeriod(period);
       const { startDate, todayDate } = getDateRange(period);
       const doc = new jsPDF();
-      const primaryColor: [number, number, number] = [79, 70, 229];
-      const bgColor = [24, 24, 27] as [number, number, number];
+      const primaryColor: [number, number, number] = [79, 70, 229]; // Indigo
+      const bgColor: [number, number, number] = [24, 24, 27]; // Zinc 900
 
       // Encabezado
       doc.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
       doc.rect(0, 0, 210, 40, 'F');
+      
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(22);
       doc.setFont("helvetica", "bold");
       doc.text("FITONIC", 14, 18);
+      
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
       doc.text("REPORTE DE PROGRESO", 14, 25);
+
       doc.text(`Generado: ${todayDate.toLocaleDateString("es-ES")}`, 150, 18);
       doc.text(`Unidad: ${unit.toUpperCase()}`, 150, 25);
 
@@ -132,24 +133,34 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
       doc.setTextColor(100);
       doc.text(`Desde ${startDate.toLocaleDateString()} hasta ${todayDate.toLocaleDateString()}`, 14, 56);
 
-      // --- CAPTURAR GRÁFICAS COMO IMAGEN ---
-      // BarChart General
-      if (barChartRef.current) {
-        const barCanvas = await html2canvas(barChartRef.current, { backgroundColor: null });
-        const barImg = barCanvas.toDataURL("image/png");
-        doc.addImage(barImg, "PNG", 14, 62, 180, 40);
-      }
-      // LineChart Individual (solo si hay datos)
-      if (lineChartRef.current) {
-        const lineCanvas = await html2canvas(lineChartRef.current, { backgroundColor: null });
-        const lineImg = lineCanvas.toDataURL("image/png");
-        doc.addImage(lineImg, "PNG", 14, 105, 180, 40);
+      let currentY = 65;
+
+      // --- CAPTURAR GRÁFICAS ---
+      if (chartsContainerRef.current) {
+        // Esperar un momento para asegurar renderizado
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        const canvas = await html2canvas(chartsContainerRef.current, {
+          backgroundColor: '#18181b', // Fondo oscuro para que coincida con el tema
+          scale: 2 // Mejor resolución
+        });
+        
+        const imgData = canvas.toDataURL('image/png');
+        // Ajustar tamaño manteniendo proporción (ancho A4 ~180mm con márgenes)
+        const imgWidth = 180;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        
+        doc.addImage(imgData, 'PNG', 14, currentY, imgWidth, imgHeight);
+        currentY += imgHeight + 10;
       }
 
       // Tabla 1: Resumen de Fuerza (1RM)
+      if (currentY > 250) { doc.addPage(); currentY = 20; }
+      
       doc.setFontSize(14);
       doc.setTextColor(0);
-      doc.text("Resumen de Fuerza (1RM)", 14, 150);
+      doc.text("Resumen de Fuerza (1RM)", 14, currentY);
+      
       const summaryRows = Array.from(exerciseStats.values()).map(stats => [
         stats.name,
         stats.body_part,
@@ -157,8 +168,9 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
         `${convertW(stats.maxWeight)} ${unit}`,
         stats.lastDate
       ]);
+
       autoTable(doc, {
-        startY: 155,
+        startY: currentY + 5,
         head: [['Ejercicio', 'Músculo', '1RM Actual', 'Mejor PR', 'Última Vez']],
         body: summaryRows,
         theme: 'grid',
@@ -166,11 +178,16 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
         styles: { fontSize: 9, cellPadding: 3 },
         alternateRowStyles: { fillColor: [245, 247, 250] }
       });
-      const lastAutoTable = (doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable;
-      const finalY = lastAutoTable?.finalY ? lastAutoTable.finalY + 15 : 170;
+
+      // @ts-expect-error doc.lastAutoTable is not typed in jspdf-autotable but exists at runtime
+      currentY = doc.lastAutoTable.finalY + 15;
+
       // Tabla 2: Historial Detallado
+      if (currentY > 250) { doc.addPage(); currentY = 20; }
+      
       doc.setFontSize(14);
-      doc.text("Historial Detallado de Sets", 14, finalY);
+      doc.text("Historial Detallado de Sets", 14, currentY);
+
       const logRows = filteredLogs.map((log: WorkoutLog) => [
         new Date(log.user_workouts?.date).toLocaleDateString("es-ES"),
         log.exercises?.name,
@@ -179,14 +196,16 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
         log.rpe_felt || "-",
         convertW(Math.round(log.weight_lbs * (1 + log.reps_done / 30)))
       ]);
+
       autoTable(doc, {
-        startY: finalY + 5,
+        startY: currentY + 5,
         head: [['Fecha', 'Ejercicio', 'Carga', 'Reps', 'RPE', '1RM Est.']],
         body: logRows,
         theme: 'striped',
         headStyles: { fillColor: [50, 50, 50], textColor: 255 },
         styles: { fontSize: 8 },
       });
+
       // Pie de página
       const pageCount = doc.getNumberOfPages();
       for(let i = 1; i <= pageCount; i++) {
@@ -195,6 +214,7 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
         doc.setTextColor(150);
         doc.text(`Página ${i} de ${pageCount} - Generado por Fitonic App`, 105, 290, { align: "center" });
       }
+
       doc.save(`Fitonic_Reporte_${todayDate.toISOString().split('T')[0]}.pdf`);
     } catch (e) {
       console.error(e);
@@ -204,14 +224,17 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
     }
   };
 
-  // Datos para gráficas
+  // Datos para gráficas ocultas
   const barChartData = Array.from(exerciseStats.values()).map(stats => ({
     name: stats.name,
     orm: stats.currentORM,
     part: stats.body_part
-  }));
-  const firstExercise = Array.from(exerciseStats.values())[0];
-  const lineChartData = firstExercise ? firstExercise.dataPoints : [];
+  })).sort((a,b) => b.orm - a.orm).slice(0, 10); // Top 10 para que quepa
+
+  // Datos para gráfica lineal (Ejemplo: Ejercicio con más progreso)
+  // En un reporte real podrías querer mostrar todos o los top 3, aquí mostramos el que tenga más datos
+  const topExercise = Array.from(exerciseStats.values()).sort((a,b) => b.dataPoints.length - a.dataPoints.length)[0];
+  const lineChartData = topExercise ? topExercise.dataPoints : [];
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8">
@@ -252,32 +275,50 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
         >
           {isGenerating ? <Loader2 className="animate-spin" /> : <><FileText size={18} /> PDF</>}
         </button>
-        {/* Renderizado oculto de gráficas para capturar con html2canvas */}
-        <div style={{ position: "absolute", left: -9999, top: 0, width: 600, height: 300 }}>
-          <div ref={barChartRef} style={{ width: 600, height: 200, background: "#18181b" }}>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={barChartData} layout="vertical">
-                <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" width={100} tick={{fill: '#a1a1aa', fontSize: 10, fontWeight: 600}} interval={0} />
-                <Tooltip formatter={(val: number) => [`${val} ${unit}`, '1RM Máximo']} />
-                <Bar dataKey="orm" radius={[0, 4, 4, 0]} barSize={20}>
+      </div>
+
+      {/* Contenedor oculto para renderizar gráficas y capturarlas */}
+      {/* Lo posicionamos fuera de pantalla pero visible para html2canvas */}
+      <div style={{ position: "fixed", left: "-9999px", top: 0 }}>
+        <div ref={chartsContainerRef} style={{ width: "800px", padding: "20px", background: "#18181b", color: "white" }}>
+          
+          <h2 style={{ fontSize: "24px", fontWeight: "bold", marginBottom: "10px", color: "#fff" }}>Perfil de Fuerza Actual</h2>
+          <div style={{ width: "100%", height: "300px", marginBottom: "40px" }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={barChartData} layout="vertical" margin={{ left: 20, right: 30, bottom: 20 }}>
+                <XAxis type="number" stroke="#71717a" tick={{fill: '#a1a1aa'}} />
+                <YAxis dataKey="name" type="category" width={150} tick={{fill: '#fff', fontSize: 12, fontWeight: 600}} />
+                <Bar dataKey="orm" radius={[0, 4, 4, 0]} barSize={20} label={{ position: 'right', fill: '#fff', formatter: (val: number) => `${val} ${unit}` }}>
                   {barChartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={["#6366f1", "#8b5cf6", "#d946ef", "#f43f5e", "#f97316", "#eab308", "#10b981", "#06b6d4", "#3b82f6"][index % 9]} />
+                    <Cell key={`cell-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div ref={lineChartRef} style={{ width: 600, height: 200, background: "#18181b" }}>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={lineChartData}>
-                <XAxis dataKey="date" stroke="#52525b" fontSize={10} tickMargin={8} />
-                <YAxis stroke="#52525b" fontSize={10} domain={['dataMin - 5', 'dataMax + 5']} hide />
-                <Tooltip formatter={(val: number) => [`${val} ${unit}`, '1RM Est.']} />
-                <Line type="monotone" dataKey="orm" stroke="#6366f1" strokeWidth={3} dot={{ r: 5, fill: '#09090b', stroke: '#6366f1', strokeWidth: 2 }} activeDot={{ r: 7 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+
+          {topExercise && (
+            <>
+              <h2 style={{ fontSize: "24px", fontWeight: "bold", marginBottom: "10px", color: "#fff" }}>
+                Tendencia Principal: {topExercise.name}
+              </h2>
+              <div style={{ width: "100%", height: "300px" }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={lineChartData} margin={{ left: 20, right: 30, bottom: 20 }}>
+                    <XAxis dataKey="date" stroke="#71717a" tick={{fill: '#a1a1aa'}} />
+                    <YAxis stroke="#71717a" tick={{fill: '#a1a1aa'}} domain={['auto', 'auto']} />
+                    <Line 
+                      type="monotone" 
+                      dataKey="orm" 
+                      stroke="#6366f1" 
+                      strokeWidth={4} 
+                      dot={{ r: 6, fill: '#fff', stroke: '#6366f1', strokeWidth: 2 }} 
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
