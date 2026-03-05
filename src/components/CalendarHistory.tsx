@@ -88,7 +88,6 @@ export default function CalendarHistory({ logs, unit, onEdit }: CalendarHistoryP
               
               {Object.entries(muscles).map(([muscle, muscleLogs]) => (
                 <div key={muscle} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-sm">
-                  
                   {/* Título Músculo */}
                   <div className="bg-zinc-950/50 px-4 py-2 border-b border-zinc-800 flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
@@ -96,34 +95,33 @@ export default function CalendarHistory({ logs, unit, onEdit }: CalendarHistoryP
                       {muscle}
                     </span>
                   </div>
-
-                  {/* Tabla de Sets */}
-                  <div className="p-1">
-                    <table className="w-full text-left text-sm">
+                  {/* Tabla de Sets con slider horizontal */}
+                  <div className="p-1 w-full overflow-x-auto scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-zinc-900">
+                    <table className="min-w-[400px] sm:min-w-[500px] md:min-w-[600px] text-left text-sm">
                       <thead className="text-[10px] uppercase text-zinc-600 font-bold">
                         <tr>
-                          <th className="px-4 py-2 pl-4">Ejercicio</th>
-                          <th className="px-2 py-2 text-center">Peso ({unit})</th>
-                          <th className="px-2 py-2 text-center">Reps</th>
-                          <th className="px-2 py-2 text-center">1RM ({unit})</th>
+                          <th className="px-4 py-2 pl-4 whitespace-nowrap">Ejercicio</th>
+                          <th className="px-2 py-2 text-center whitespace-nowrap">Peso ({unit})</th>
+                          <th className="px-2 py-2 text-center whitespace-nowrap">Reps</th>
+                          <th className="px-2 py-2 text-center whitespace-nowrap">1RM ({unit})</th>
                           <th className="w-8"></th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-zinc-800/50">
                         {muscleLogs.map((log) => (
                           <tr key={log.id} className="hover:bg-zinc-800/30 transition-colors group">
-                            <td className="px-4 py-3 font-medium text-white max-w-[120px] truncate pl-4">
+                            <td className="px-4 py-3 font-medium text-white max-w-[120px] truncate pl-4 whitespace-nowrap">
                               {log.exercises.name}
                             </td>
-                            <td className="px-2 py-3 text-center">
+                            <td className="px-2 py-3 text-center whitespace-nowrap">
                               <span className="bg-zinc-800 text-white px-2 py-1 rounded-md text-xs font-mono font-bold">
                                 {convertW(log.weight_lbs)} {unit}
                               </span>
                             </td>
-                            <td className="px-2 py-3 text-center text-zinc-400 text-xs font-mono">
+                            <td className="px-2 py-3 text-center text-zinc-400 text-xs font-mono whitespace-nowrap">
                               {log.reps_done}
                             </td>
-                            <td className="px-2 py-3 text-center text-indigo-400 text-xs font-mono font-bold">
+                            <td className="px-2 py-3 text-center text-indigo-400 text-xs font-mono font-bold whitespace-nowrap">
                               {convertW(Math.round(log.weight_lbs * (1 + log.reps_done / 30)))} {unit}
                             </td>
                             <td className="pr-2 text-right">
