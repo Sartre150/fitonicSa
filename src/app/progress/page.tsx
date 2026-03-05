@@ -5,6 +5,7 @@ import { createClient } from "@/utils/supabase/client";
 import { TrendingUp, ChevronDown, Database, Activity, Dumbbell, ArrowRightLeft, Edit2 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import EditSetModal from "@/components/EditSetModal";
+import ReportGenerator from "@/components/ReportGenerator";
 
 type Unit = "lbs" | "kg";
 
@@ -259,6 +260,13 @@ export default function ProgressPage() {
          </div>
       ) : (
         <>
+          {/* REPORTE GENERATOR */}
+          <ReportGenerator 
+            exerciseStats={exerciseStats} 
+            unit={unit} 
+            logs={logs} 
+          />
+
           {/* SELECTOR */}
           <div className="relative mb-6">
             <select 

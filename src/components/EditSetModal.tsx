@@ -4,64 +4,80 @@ import { useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { X, Save, Trash2, Loader2 } from "lucide-react";
 
-interface WorkoutSetLog {
+interface WorkoutLog {
   id: string;
   weight_lbs: number;
   reps_done: number;
   rpe_felt: number | null;
+  set_type: string;
+  exercises: { name: string; body_part: string; };
+  user_workouts: { date: string; };
 }
 
 interface EditSetModalProps {
-  log: WorkoutSetLog;
+  log: WorkoutLog;
   onClose: () => void;
-  onUpdate: () => void; // Para recargar la gráfica al guardar
+  onUpdate: () => void;
 }
 
 export default function EditSetModal({ log, onClose, onUpdate }: EditSetModalProps) {
   const supabase = createClient();
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    weight: log.weight_lbs.toString(),
-    reps: log.reps_done.toString(),
-    rpe: log.rpe_felt?.toString() || ""
-  });
+  
+  // Estado local para los inputs (como strings para compatibilidad con inputs HTML)
+  const [weight, setWeight] = useState(log.weight_lbs.toString());
+  const [reps, setReps] = useState(log.reps_done.toString());
+  const [rpe, setRpe] = useState(log.rpe_felt?.toString() || "");
 
   const handleSave = async () => {
     setLoading(true);
-    const weightNum = Number(formData.weight);
-    const repsNum = Number(formData.reps);
-    const rpeNum = formData.rpe ? Number(formData.rpe) : null;
+    
+    // Validación
+    const parsedWeight = parseFloat(weight);
+    const parsedReps = parseInt(reps);
+    const parsedRpe = rpe ? parseFloat(rpe) : null;
 
-    if (isNaN(weightNum) || isNaN(repsNum)) {
-      alert("Por favor ingresa valores válidos para peso y reps");
+    if (isNaN(parsedWeight) || isNaN(parsedReps)) {
+      alert("Por favor, ingresa valores válidos");
       setLoading(false);
       return;
     }
-
+    
+    // UPDATE directo a la tabla workout_sets
     const { error } = await supabase
       .from("workout_sets")
       .update({
-        weight_lbs: weightNum,
-        reps_done: repsNum,
-        rpe_felt: rpeNum
+        weight_lbs: parsedWeight,
+        reps_done: parsedReps,
+        rpe_felt: parsedRpe
       })
       .eq("id", log.id);
 
     setLoading(false);
-    if (!error) {
+
+    if (error) {
+      console.error("Error al editar:", error);
+      alert("No se pudo guardar el cambio.");
+    } else {
       onUpdate();
       onClose();
-    } else {
-      alert("Error al actualizar");
     }
   };
 
   const handleDelete = async () => {
-    if (!confirm("¿Seguro que quieres borrar este registro?")) return;
+    if (!confirm("¿Seguro que quieres borrar este set?")) return;
     setLoading(true);
-    const { error } = await supabase.from("workout_sets").delete().eq("id", log.id);
+
+    const { error } = await supabase
+      .from("workout_sets")
+      .delete()
+      .eq("id", log.id);
+
     setLoading(false);
-    if (!error) {
+
+    if (error) {
+      alert("Error al borrar.");
+    } else {
       onUpdate();
       onClose();
     }
@@ -69,63 +85,69 @@ export default function EditSetModal({ log, onClose, onUpdate }: EditSetModalPro
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
-      <div className="bg-zinc-900 w-full max-w-xs rounded-2xl border border-zinc-800 p-6 shadow-2xl">
+      <div className="bg-zinc-900 w-full max-w-sm rounded-3xl border border-zinc-800 p-6 shadow-2xl">
+        
         <div className="flex justify-between items-center mb-6">
-          <h3 className="font-bold text-white">Editar Registro</h3>
-          <button onClick={onClose}><X className="text-zinc-500" /></button>
+          <h3 className="font-bold text-white text-lg">Editar Registro</h3>
+          <button onClick={onClose} className="bg-zinc-800 p-2 rounded-full text-zinc-400 hover:text-white">
+            <X size={20} />
+          </button>
         </div>
 
         <div className="space-y-4">
           <div>
-            <label className="text-xs uppercase text-zinc-500 font-bold">Peso (Lbs)</label>
-            <input
-              type="number"
+            <label className="text-xs uppercase text-zinc-500 font-bold ml-1 mb-1 block">Carga (Lbs)</label>
+            <input 
+              type="number" 
+              value={weight} 
+              onChange={(e) => setWeight(e.target.value)}
               step="0.1"
-              value={formData.weight}
-              onChange={e => setFormData({...formData, weight: e.target.value})}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white font-mono"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-white font-mono text-lg focus:border-indigo-500 outline-none" 
             />
           </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-xs uppercase text-zinc-500 font-bold">Reps</label>
-              <input
-                type="number"
+              <label className="text-xs uppercase text-zinc-500 font-bold ml-1 mb-1 block">Reps</label>
+              <input 
+                type="number" 
+                value={reps} 
+                onChange={(e) => setReps(e.target.value)}
                 step="1"
-                value={formData.reps}
-                onChange={e => setFormData({...formData, reps: e.target.value})}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white font-mono"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-white font-mono text-lg focus:border-indigo-500 outline-none" 
               />
             </div>
             <div>
-              <label className="text-xs uppercase text-zinc-500 font-bold">RPE</label>
-              <input
-                type="number"
+              <label className="text-xs uppercase text-zinc-500 font-bold ml-1 mb-1 block">RPE</label>
+              <input 
+                type="number" 
+                value={rpe} 
+                onChange={(e) => setRpe(e.target.value)}
                 step="0.5"
-                value={formData.rpe}
-                onChange={e => setFormData({...formData, rpe: e.target.value})}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white font-mono"
+                placeholder="-"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-white font-mono text-lg focus:border-indigo-500 outline-none" 
               />
             </div>
           </div>
         </div>
 
-        <div className="flex gap-3 mt-6">
-          <button
-            onClick={handleDelete}
-            disabled={loading}
-            className="p-4 bg-red-500/10 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        <div className="flex gap-3 mt-8">
+          <button 
+            onClick={handleDelete} 
+            className="bg-red-500/10 text-red-500 p-4 rounded-xl hover:bg-red-500 hover:text-white transition-colors"
           >
-            <Trash2 size={20} />
+            {loading ? <Loader2 className="animate-spin" size={20} /> : <Trash2 size={20} />}
           </button>
-          <button
-            onClick={handleSave}
-            disabled={loading || !formData.weight || !formData.reps}
-            className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          
+          <button 
+            onClick={handleSave} 
+            disabled={loading}
+            className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
           >
-            {loading ? <Loader2 className="animate-spin" size={18} /> : <><Save size={18} /> Guardar</>}
+            {loading ? <Loader2 className="animate-spin" /> : <><Save size={20} /> Guardar Cambios</>}
           </button>
         </div>
+
       </div>
     </div>
   );
