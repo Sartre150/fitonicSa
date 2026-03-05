@@ -96,7 +96,7 @@ export default function EditSetModal({ log, onClose, onUpdate }: EditSetModalPro
 
         <div className="space-y-4">
           <div>
-            <label className="text-xs uppercase text-zinc-500 font-bold ml-1 mb-1 block">Carga (Lbs)</label>
+            <label className="text-xs uppercase text-zinc-500 font-bold ml-1 mb-1 block">Carga (LBS)</label>
             <input 
               type="number" 
               value={weight} 
