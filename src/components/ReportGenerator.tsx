@@ -6,9 +6,9 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import html2canvas from "html2canvas";
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, LineChart, Line } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, LineChart, Line, CartesianGrid } from "recharts";
 
-// Interfaces reutilizadas
+// Interfaces
 interface ChartPoint { date: string; orm: number }
 interface ExerciseStats {
   name: string;
@@ -35,12 +35,11 @@ interface ReportGeneratorProps {
 }
 
 type ReportPeriod = "week" | "month";
-
 const BAR_COLORS = ["#6366f1", "#8b5cf6", "#d946ef", "#f43f5e", "#f97316", "#eab308", "#10b981", "#06b6d4", "#3b82f6"];
 
 export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGeneratorProps) {
-  // Referencias para capturar gráficas ocultas
-  const chartsContainerRef = useRef<HTMLDivElement>(null);
+  // Referencia para el contenedor oculto de captura
+  const printRef = useRef<HTMLDivElement>(null);
   
   const [period, setPeriod] = useState<ReportPeriod>("month");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -63,11 +62,9 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
 
   const convertW = (lbs: number) => unit === "kg" ? Number((lbs * 0.453592).toFixed(1)) : lbs;
 
-  // --- GENERAR EXCEL ---
+  // --- EXCEL ---
   const generateExcel = () => {
     const filteredLogs = filterDataByPeriod(period);
-    
-    // Hoja 1: Resumen
     const summaryData = Array.from(exerciseStats.values())
       .filter(stats => stats.dataPoints.length > 0)
       .map(stats => ({
@@ -78,7 +75,6 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
         "Última Sesión": stats.lastDate,
       }));
 
-    // Hoja 2: Detalles
     const detailData = filteredLogs.map((log: WorkoutLog) => ({
       Fecha: new Date(log.user_workouts?.date).toLocaleDateString("es-ES"),
       Ejercicio: log.exercises?.name || "N/A",
@@ -92,101 +88,95 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
     const wb = XLSX.utils.book_new();
     const ws1 = XLSX.utils.json_to_sheet(summaryData);
     const ws2 = XLSX.utils.json_to_sheet(detailData);
-
     XLSX.utils.book_append_sheet(wb, ws1, "Resumen");
     XLSX.utils.book_append_sheet(wb, ws2, "Historial Completo");
-
     XLSX.writeFile(wb, `Fitonic_Reporte_${new Date().toISOString().split("T")[0]}.xlsx`);
   };
 
-  // --- GENERAR PDF PREMIUM ---
+  // --- PDF ---
   const generatePDF = async () => {
     setIsGenerating(true);
     try {
+      // 1. Esperar a que el contenedor oculto se renderice bien
+      // (Le damos un momento para que Recharts calcule tamaños)
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      if (!printRef.current) throw new Error("No se encontró el contenedor de gráficas");
+
+      // 2. Capturar gráficas como imagen de alta calidad (scale reducido para móvil)
+      const isMobile = window.innerWidth < 768;
+      const canvas = await html2canvas(printRef.current, {
+        scale: isMobile ? 1.5 : 2, // Menor resolución en móvil para evitar problemas de memoria
+        backgroundColor: '#18181b',
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        windowWidth: 800, // Forzar ancho consistente
+        windowHeight: 600
+      });
+      const imgData = canvas.toDataURL('image/png');
+
+      // 3. Crear PDF
+      const doc = new jsPDF();
       const filteredLogs = filterDataByPeriod(period);
       const { startDate, todayDate } = getDateRange(period);
-      const doc = new jsPDF();
-      const primaryColor: [number, number, number] = [79, 70, 229]; // Indigo
-      const bgColor: [number, number, number] = [24, 24, 27]; // Zinc 900
+      const primaryColor: [number, number, number] = [79, 70, 229];
+      const bgColor: [number, number, number] = [24, 24, 27];
 
       // Encabezado
       doc.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
       doc.rect(0, 0, 210, 40, 'F');
-      
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(22);
       doc.setFont("helvetica", "bold");
       doc.text("FITONIC", 14, 18);
-      
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
       doc.text("REPORTE DE PROGRESO", 14, 25);
-
       doc.text(`Generado: ${todayDate.toLocaleDateString("es-ES")}`, 150, 18);
-      doc.text(`Unidad: ${unit.toUpperCase()}`, 150, 25);
-
-      // Info del Periodo
+      
       doc.setTextColor(0, 0, 0);
       doc.setFontSize(12);
-      doc.text(`Período analizado: ${period === 'week' ? 'Última Semana' : 'Último Mes'}`, 14, 50);
-      doc.setFontSize(10);
-      doc.setTextColor(100);
-      doc.text(`Desde ${startDate.toLocaleDateString()} hasta ${todayDate.toLocaleDateString()}`, 14, 56);
+      doc.text(`Período: ${period === 'week' ? 'Semanal' : 'Mensual'} (${startDate.toLocaleDateString()} - ${todayDate.toLocaleDateString()})`, 14, 50);
 
-      let currentY = 65;
+      // Insertar Imagen de Gráficas
+      const imgWidth = 180;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      doc.addImage(imgData, 'PNG', 15, 60, imgWidth, imgHeight);
 
-      // --- CAPTURAR GRÁFICAS ---
-      if (chartsContainerRef.current) {
-        // Esperar un momento para asegurar renderizado
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        const canvas = await html2canvas(chartsContainerRef.current, {
-          backgroundColor: '#18181b', // Fondo oscuro para que coincida con el tema
-          scale: 2 // Mejor resolución
-        });
-        
-        const imgData = canvas.toDataURL('image/png');
-        // Ajustar tamaño manteniendo proporción (ancho A4 ~180mm con márgenes)
-        const imgWidth = 180;
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-        
-        doc.addImage(imgData, 'PNG', 14, currentY, imgWidth, imgHeight);
-        currentY += imgHeight + 10;
-      }
-
-      // Tabla 1: Resumen de Fuerza (1RM)
+      // Tabla Resumen
+      let currentY = 60 + imgHeight + 15;
       if (currentY > 250) { doc.addPage(); currentY = 20; }
       
       doc.setFontSize(14);
-      doc.setTextColor(0);
       doc.text("Resumen de Fuerza (1RM)", 14, currentY);
       
-      const summaryRows = Array.from(exerciseStats.values()).map(stats => [
-        stats.name,
-        stats.body_part,
-        `${convertW(stats.currentORM)} ${unit}`,
-        `${convertW(stats.maxWeight)} ${unit}`,
-        stats.lastDate
-      ]);
+      const summaryRows = Array.from(exerciseStats.values())
+        .sort((a,b) => b.currentORM - a.currentORM)
+        .slice(0, 15) // Top 15 para no saturar
+        .map(stats => [
+          stats.name,
+          stats.body_part,
+          `${convertW(stats.currentORM)} ${unit}`,
+          `${convertW(stats.maxWeight)} ${unit}`,
+          stats.lastDate
+        ]);
 
       autoTable(doc, {
         startY: currentY + 5,
         head: [['Ejercicio', 'Músculo', '1RM Actual', 'Mejor PR', 'Última Vez']],
         body: summaryRows,
         theme: 'grid',
-        headStyles: { fillColor: primaryColor, textColor: 255, fontStyle: 'bold' },
-        styles: { fontSize: 9, cellPadding: 3 },
-        alternateRowStyles: { fillColor: [245, 247, 250] }
+        headStyles: { fillColor: primaryColor, textColor: 255 },
+        styles: { fontSize: 8 },
       });
 
-      // @ts-expect-error doc.lastAutoTable is not typed in jspdf-autotable but exists at runtime
-      currentY = doc.lastAutoTable.finalY + 15;
+      currentY = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 15;
 
-      // Tabla 2: Historial Detallado
-      if (currentY > 250) { doc.addPage(); currentY = 20; }
-      
+      // Tabla Detalle
+      if (currentY > 240) { doc.addPage(); currentY = 20; }
       doc.setFontSize(14);
-      doc.text("Historial Detallado de Sets", 14, currentY);
+      doc.text("Historial Detallado", 14, currentY);
 
       const logRows = filteredLogs.map((log: WorkoutLog) => [
         new Date(log.user_workouts?.date).toLocaleDateString("es-ES"),
@@ -199,40 +189,52 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
 
       autoTable(doc, {
         startY: currentY + 5,
-        head: [['Fecha', 'Ejercicio', 'Carga', 'Reps', 'RPE', '1RM Est.']],
+        head: [['Fecha', 'Ejercicio', 'Carga', 'Reps', 'RPE', '1RM']],
         body: logRows,
         theme: 'striped',
         headStyles: { fillColor: [50, 50, 50], textColor: 255 },
         styles: { fontSize: 8 },
       });
 
-      // Pie de página
-      const pageCount = doc.getNumberOfPages();
-      for(let i = 1; i <= pageCount; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.setTextColor(150);
-        doc.text(`Página ${i} de ${pageCount} - Generado por Fitonic App`, 105, 290, { align: "center" });
+      // Compatibilidad móvil: usar blob para descarga
+      const pdfBlob = doc.output('blob');
+      const fileName = `Fitonic_Reporte_${todayDate.toISOString().split('T')[0]}.pdf`;
+      
+      // Detectar si es móvil para usar método alternativo de descarga
+      if (typeof navigator !== 'undefined' && navigator.share && /Mobi|Android/i.test(navigator.userAgent)) {
+        try {
+          const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+          await navigator.share({ files: [file], title: 'Reporte Fitonic' });
+        } catch {
+          // Fallback si share falla
+          const url = URL.createObjectURL(pdfBlob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = fileName;
+          link.click();
+          URL.revokeObjectURL(url);
+        }
+      } else {
+        doc.save(fileName);
       }
 
-      doc.save(`Fitonic_Reporte_${todayDate.toISOString().split('T')[0]}.pdf`);
     } catch (e) {
       console.error(e);
-      alert("Error al generar PDF. Intenta de nuevo.");
+      alert("Hubo un error al generar el PDF.");
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // Datos para gráficas ocultas
-  const barChartData = Array.from(exerciseStats.values()).map(stats => ({
-    name: stats.name,
-    orm: stats.currentORM,
-    part: stats.body_part
-  })).sort((a,b) => b.orm - a.orm).slice(0, 10); // Top 10 para que quepa
+  // Datos para gráficas ocultas (SOLO PARA PDF)
+  const barChartData = Array.from(exerciseStats.values())
+    .map(stats => ({
+      name: stats.name.substring(0, 15) + (stats.name.length>15 ? '...' : ''), // Truncar nombres largos para PDF
+      orm: stats.currentORM,
+    }))
+    .sort((a,b) => b.orm - a.orm)
+    .slice(0, 8); // Solo top 8 para que se vea bien en la hoja
 
-  // Datos para gráfica lineal (Ejemplo: Ejercicio con más progreso)
-  // En un reporte real podrías querer mostrar todos o los top 3, aquí mostramos el que tenga más datos
   const topExercise = Array.from(exerciseStats.values()).sort((a,b) => b.dataPoints.length - a.dataPoints.length)[0];
   const lineChartData = topExercise ? topExercise.dataPoints : [];
 
@@ -244,81 +246,80 @@ export default function ReportGenerator({ exerciseStats, unit, logs }: ReportGen
           <h3 className="font-bold text-white">Exportar Datos</h3>
         </div>
         
-        {/* Selector Periodo */}
         <div className="flex bg-zinc-950 p-1 rounded-lg border border-zinc-800">
-          <button 
-            onClick={() => setPeriod("week")}
-            className={`px-3 py-1 rounded-md text-xs font-bold transition-colors ${period === 'week' ? 'bg-zinc-800 text-white' : 'text-zinc-500'}`}
-          >
-            Semana
-          </button>
-          <button 
-            onClick={() => setPeriod("month")}
-            className={`px-3 py-1 rounded-md text-xs font-bold transition-colors ${period === 'month' ? 'bg-zinc-800 text-white' : 'text-zinc-500'}`}
-          >
-            Mes
-          </button>
+          <button onClick={() => setPeriod("week")} className={`px-3 py-1 rounded-md text-xs font-bold transition-colors ${period === 'week' ? 'bg-zinc-800 text-white' : 'text-zinc-500'}`}>Semana</button>
+          <button onClick={() => setPeriod("month")} className={`px-3 py-1 rounded-md text-xs font-bold transition-colors ${period === 'month' ? 'bg-zinc-800 text-white' : 'text-zinc-500'}`}>Mes</button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <button
-          onClick={generateExcel}
-          className="flex items-center justify-center gap-2 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white py-3 px-4 rounded-xl font-bold text-sm transition-colors border border-emerald-500/20"
-        >
+        <button onClick={generateExcel} className="flex items-center justify-center gap-2 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white py-3 px-4 rounded-xl font-bold text-sm transition-colors border border-emerald-500/20">
           <FileSpreadsheet size={18} /> Excel
         </button>
-        <button
-          onClick={generatePDF}
-          disabled={isGenerating}
-          className="flex items-center justify-center gap-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white py-3 px-4 rounded-xl font-bold text-sm transition-colors border border-red-500/20 disabled:opacity-50"
-        >
+        <button onClick={generatePDF} disabled={isGenerating} className="flex items-center justify-center gap-2 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white py-3 px-4 rounded-xl font-bold text-sm transition-colors border border-red-500/20 disabled:opacity-50">
           {isGenerating ? <Loader2 className="animate-spin" /> : <><FileText size={18} /> PDF</>}
         </button>
       </div>
 
-      {/* Contenedor oculto para renderizar gráficas y capturarlas */}
-      {/* Lo posicionamos fuera de pantalla pero visible para html2canvas */}
-      <div style={{ position: "fixed", left: "-9999px", top: 0 }}>
-        <div ref={chartsContainerRef} style={{ width: "800px", padding: "20px", background: "#18181b", color: "white" }}>
+      {/* 
+        CONTENEDOR DE CAPTURA (ESTRATEGIA VISIBLE PERO OCULTA)
+        En lugar de display:none o left:-9999px que rompe Recharts,
+        lo posicionamos absoluto con opacidad 0 y z-index negativo.
+        Así el navegador SI lo renderiza geométricamente.
+      */}
+      <div 
+        style={{ 
+          position: "absolute", 
+          zIndex: -50, 
+          opacity: 0, 
+          pointerEvents: "none",
+          width: "800px", // Ancho fijo para PDF
+          top: 0,
+          left: 0
+        }}
+      >
+        <div ref={printRef} style={{ backgroundColor: '#18181b', padding: '32px', color: '#ffffff', width: '800px' }}>
+          <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px', textAlign: 'center', color: '#ffffff' }}>Resumen Visual</h2>
           
-          <h2 style={{ fontSize: "24px", fontWeight: "bold", marginBottom: "10px", color: "#fff" }}>Perfil de Fuerza Actual</h2>
-          <div style={{ width: "100%", height: "300px", marginBottom: "40px" }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={barChartData} layout="vertical" margin={{ left: 20, right: 30, bottom: 20 }}>
-                <XAxis type="number" stroke="#71717a" tick={{fill: '#a1a1aa'}} />
-                <YAxis dataKey="name" type="category" width={150} tick={{fill: '#fff', fontSize: 12, fontWeight: 600}} />
-                <Bar dataKey="orm" radius={[0, 4, 4, 0]} barSize={20} label={{ position: 'right', fill: '#fff', formatter: (val: number) => `${val} ${unit}` }}>
-                  {barChartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {topExercise && (
-            <>
-              <h2 style={{ fontSize: "24px", fontWeight: "bold", marginBottom: "10px", color: "#fff" }}>
-                Tendencia Principal: {topExercise.name}
-              </h2>
-              <div style={{ width: "100%", height: "300px" }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={lineChartData} margin={{ left: 20, right: 30, bottom: 20 }}>
-                    <XAxis dataKey="date" stroke="#71717a" tick={{fill: '#a1a1aa'}} />
-                    <YAxis stroke="#71717a" tick={{fill: '#a1a1aa'}} domain={['auto', 'auto']} />
-                    <Line 
-                      type="monotone" 
-                      dataKey="orm" 
-                      stroke="#6366f1" 
-                      strokeWidth={4} 
-                      dot={{ r: 6, fill: '#fff', stroke: '#6366f1', strokeWidth: 2 }} 
-                    />
-                  </LineChart>
+          <div style={{ display: 'flex', gap: '32px' }}>
+            {/* Gráfica de Barras */}
+            <div style={{ width: '50%' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center', color: '#a1a1aa' }}>Top Fuerza (1RM)</h3>
+              <div style={{ width: "100%", height: 300 }}>
+                <ResponsiveContainer>
+                  <BarChart data={barChartData} layout="vertical" margin={{ left: 40 }}>
+                    <XAxis type="number" hide />
+                    <YAxis dataKey="name" type="category" width={100} tick={{fill: '#fff', fontSize: 10}} />
+                    <Bar dataKey="orm" radius={[0, 4, 4, 0]}>
+                      {barChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
-            </>
-          )}
+            </div>
+
+            {/* Gráfica de Línea */}
+            <div style={{ width: '50%' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center', color: '#a1a1aa' }}>Tendencia Principal</h3>
+              {topExercise && (
+                <>
+                  <p style={{ textAlign: 'center', color: '#818cf8', fontWeight: 'bold', marginBottom: '8px' }}>{topExercise.name}</p>
+                  <div style={{ width: "100%", height: 260 }}>
+                    <ResponsiveContainer>
+                      <LineChart data={lineChartData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                        <XAxis dataKey="date" stroke="#71717a" fontSize={10} />
+                        <YAxis stroke="#71717a" fontSize={10} domain={['auto', 'auto']} />
+                        <Line type="monotone" dataKey="orm" stroke="#6366f1" strokeWidth={3} dot={{ r: 4, fill: '#fff' }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

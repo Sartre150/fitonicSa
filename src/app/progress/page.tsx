@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { TrendingUp, ChevronDown, Dumbbell, ArrowRightLeft, BarChart3, Clock } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -40,22 +40,24 @@ const BAR_COLORS = ["#6366f1", "#8b5cf6", "#d946ef", "#f43f5e", "#f97316", "#eab
 export default function ProgressPage() {
   const [logs, setLogs] = useState<WorkoutLog[]>([]);
   const [registeredExercises, setRegisteredExercises] = useState<string[]>([]);
+  
+  // Estados de selección y filtros
   const [selectedExercise, setSelectedExercise] = useState("Todos");
+  const [selectedCategory, setSelectedCategory] = useState("Top"); // <-- Nuevo estado para el filtro de categorías
+
   const [exerciseStats, setExerciseStats] = useState<Map<string, ExerciseStats>>(new Map());
   const [strengthProfileData, setStrengthProfileData] = useState<StrengthProfileDataPoint[]>([]);
-  const [currentChartData, setCurrentChartData] = useState<ChartPoint[]>([]);
+  
   const [selectedLog, setSelectedLog] = useState<WorkoutLog | null>(null);
   const [loading, setLoading] = useState(true);
   const [unit, setUnit] = useState<Unit>("lbs");
-  const [refreshTrigger, setRefreshTrigger] = useState(0); // Para forzar recarga
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   
   const supabase = createClient();
 
   useEffect(() => {
-    (async () => {
-      const saved = (localStorage.getItem("weightUnit") as Unit) || "lbs";
-      setUnit(saved);
-    })();
+    const saved = (localStorage.getItem("weightUnit") as Unit) || "lbs";
+    if(saved) Promise.resolve().then(() => setUnit(saved));
   }, []);
 
   const toggleUnit = () => {
@@ -64,7 +66,7 @@ export default function ProgressPage() {
     localStorage.setItem("weightUnit", next);
   };
 
-  const convertW = (lbs: number) => (unit === "kg" ? Math.round(lbs * 0.453592) : lbs);
+  const convertW = useCallback((lbs: number) => (unit === "kg" ? Math.round(lbs * 0.453592) : lbs), [unit]);
 
   const calculateORM = (weight: number, reps: number, rpe: number | null) => {
     const rir = rpe ? (10 - rpe) : 0; 
@@ -72,28 +74,28 @@ export default function ProgressPage() {
     return Math.round(weight * (1 + effectiveReps / 30));
   };
 
+  // Formatters para tooltips
+  const barChartFormatter = useCallback((val: number) => [`${convertW(val)} ${unit}`, '1RM Máximo'], [convertW, unit]);
+  const lineChartFormatter = useCallback((val: number) => [`${convertW(val)} ${unit}`, '1RM Est.'], [convertW, unit]);
+
   useEffect(() => {
     let isMounted = true;
 
     async function fetchData() {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        if (isMounted) setLoading(false);
-        return;
-      }
+      if (!user) { if (isMounted) setLoading(false); return; }
 
       const { data, error } = await supabase
         .from("workout_sets")
         .select(`id, weight_lbs, reps_done, rpe_felt, set_type, exercises (name, body_part), user_workouts (date)`)
         .eq("set_type", "Normal") 
-        .order("user_workouts(date)", { ascending: false }); // Intenta ordenar por fecha relacionada, si falla usa JS sort
+        .order("user_workouts(date)", { ascending: false });
 
       if (!isMounted) return;
 
       if (!error && data) {
-        // Ordenamiento manual en JS por seguridad
+        // Ordenamiento seguro en JS
         const typedData = (data as unknown as WorkoutLog[]).sort((a, b) => 
           new Date(b.user_workouts.date).getTime() - new Date(a.user_workouts.date).getTime()
         );
@@ -131,51 +133,66 @@ export default function ProgressPage() {
 
           const maxWeight = Math.max(...exLogs.map(l => l.weight_lbs));
           const currentBestORM = Math.max(...chartPoints.map(p => p.orm)); 
-          
-          // Encuentra el log más reciente para la fecha
-          const mostRecentLog = exLogs[0]; // Ya están ordenados
+          const mostRecentLog = exLogs[0];
           const lastDateStr = new Date(mostRecentLog.user_workouts.date).toLocaleDateString('es-ES', { timeZone: 'UTC' });
 
           statsMap.set(exerciseName, { 
-            name: exerciseName, 
-            body_part: bodyPart, 
-            maxWeight, 
-            currentORM: currentBestORM, 
-            lastDate: lastDateStr, 
-            dataPoints: chartPoints 
+            name: exerciseName, body_part: bodyPart, maxWeight, currentORM: currentBestORM, lastDate: lastDateStr, dataPoints: chartPoints 
           });
           
-          profileData.push({
-            name: exerciseName,
-            orm: currentBestORM,
-            part: bodyPart
-          });
+          profileData.push({ name: exerciseName, orm: currentBestORM, part: bodyPart });
         });
         
         setExerciseStats(statsMap);
         setStrengthProfileData(profileData.sort((a, b) => b.orm - a.orm));
       }
-      
       setLoading(false);
     }
-
     fetchData();
-
     return () => { isMounted = false; };
-  }, [supabase, refreshTrigger]); // Dependencia en refreshTrigger para recargar
+  }, [supabase, refreshTrigger]);
 
-  // Actualizar datos de gráfica cuando cambia la selección o stats
-  useEffect(() => {
-    (async () => {
-      if (selectedExercise !== "Todos") {
-        const stats = exerciseStats.get(selectedExercise);
-        setCurrentChartData(stats ? stats.dataPoints : []);
-      }
-    })();
+  // Calcular datos del gráfico de líneas con useMemo (más eficiente que useEffect + setState)
+  const currentChartData = useMemo(() => {
+    if (selectedExercise !== "Todos") {
+      const stats = exerciseStats.get(selectedExercise);
+      return stats ? stats.dataPoints : [];
+    }
+    return [];
   }, [selectedExercise, exerciseStats]);
 
+  // --- LÓGICA DE FILTRADO PARA BARRAS ---
+  const filteredBarData = useMemo(() => {
+    if (selectedCategory === "Top") {
+      return strengthProfileData.slice(0, 7); // Solo los 7 más fuertes
+    }
+    // Filtrado inteligente por palabras clave de grupos musculares
+    return strengthProfileData.filter(d => {
+        const p = d.part.toLowerCase();
+        const cat = selectedCategory.toLowerCase();
+        
+        // Coincidencia directa o grupos relacionados
+        if (p.includes(cat)) return true;
+        
+        if (selectedCategory === "Upper") return ["chest", "back", "shoulders", "triceps", "biceps", "arms"].some(k => p.includes(k));
+        if (selectedCategory === "Lower") return ["legs", "hamstrings", "calves", "glutes", "quads"].some(k => p.includes(k));
+        
+        return false;
+    });
+  }, [selectedCategory, strengthProfileData]);
+
+  // Cálculo de altura dinámica para que la gráfica crezca si hay muchos items
+  const dynamicHeight = Math.max(300, filteredBarData.length * 50);
+
+  // Obtener categorías únicas disponibles
+  const availableCategories = useMemo(() => {
+      const cats = new Set<string>();
+      strengthProfileData.forEach(d => cats.add(d.part));
+      return Array.from(cats).sort();
+  }, [strengthProfileData]);
+
   const handleUpdate = () => {
-    setRefreshTrigger(prev => prev + 1); // Forzar recarga
+    setRefreshTrigger(prev => prev + 1);
     setSelectedLog(null);
   };
 
@@ -205,6 +222,7 @@ export default function ProgressPage() {
         <>
           <ReportGenerator exerciseStats={exerciseStats} unit={unit} logs={logs} />
 
+          {/* SELECTOR PRINCIPAL */}
           <div className="relative mb-6">
             <select 
               value={selectedExercise}
@@ -220,38 +238,67 @@ export default function ProgressPage() {
           </div>
 
           <div className="bg-zinc-900 border border-zinc-800 p-4 sm:p-6 rounded-3xl mb-8">
-            <div className="flex justify-between items-start mb-6">
-              {selectedExercise === "Todos" ? (
-                 <div>
-                   <h2 className="text-lg font-black text-white flex items-center gap-2">
-                     <BarChart3 className="text-emerald-500" size={20}/>
-                     Perfil de Fuerza Actual
-                   </h2>
-                   <p className="text-zinc-500 text-xs mt-1">Comparativa de tu 1RM en todos tus ejercicios</p>
+            
+            {/* CABECERA CON FILTROS (Solo visible en modo "Todos") */}
+            {selectedExercise === "Todos" ? (
+              <>
+               <div className="mb-4 flex items-center justify-between">
+                 <div className="flex items-center gap-2">
+                    <BarChart3 className="text-emerald-500" size={20}/>
+                    <h2 className="font-bold text-zinc-300">Perfil de Fuerza</h2>
                  </div>
-              ) : (
+               </div>
+               
+               {/* PESTAÑAS DE FILTRO */}
+               <div className="flex gap-2 overflow-x-auto pb-4 mb-2 custom-scrollbar">
+                  <button 
+                    onClick={() => setSelectedCategory("Top")}
+                    className={`whitespace-nowrap px-3 py-1 rounded-lg text-xs font-bold transition-colors ${selectedCategory === "Top" ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"}`}
+                  >
+                    🏆 Top 7
+                  </button>
+                  
+                  {/* Botones inteligentes Upper/Lower si existen datos */}
+                  <button onClick={() => setSelectedCategory("Upper")} className={`whitespace-nowrap px-3 py-1 rounded-lg text-xs font-bold transition-colors ${selectedCategory === "Upper" ? "bg-indigo-500 text-white" : "bg-zinc-800 text-zinc-400"}`}>Upper Body</button>
+                  <button onClick={() => setSelectedCategory("Lower")} className={`whitespace-nowrap px-3 py-1 rounded-lg text-xs font-bold transition-colors ${selectedCategory === "Lower" ? "bg-indigo-500 text-white" : "bg-zinc-800 text-zinc-400"}`}>Lower Body</button>
+
+                  {/* Categorías específicas dinámicas */}
+                  {availableCategories.map(group => (
+                    <button 
+                      key={group}
+                      onClick={() => setSelectedCategory(group)}
+                      className={`whitespace-nowrap px-3 py-1 rounded-lg text-xs font-bold transition-colors ${selectedCategory === group ? "bg-indigo-500 text-white" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"}`}
+                    >
+                      {group}
+                    </button>
+                  ))}
+               </div>
+              </>
+            ) : (
+               <div className="flex justify-between items-start mb-6">
                  <div>
                    <h2 className="text-xl font-black text-white pr-2">{exerciseStats.get(selectedExercise)?.name}</h2>
                    <span className="inline-block mt-1 text-[10px] uppercase font-black bg-zinc-800 text-zinc-400 px-2 py-1 rounded">
                      {exerciseStats.get(selectedExercise)?.body_part}
                    </span>
                  </div>
-              )}
+                 <div className="text-right">
+                   <div className="text-indigo-400 font-black text-2xl">{convertW(exerciseStats.get(selectedExercise)!.currentORM)}</div>
+                   <div className="text-zinc-500 text-xs uppercase font-bold">PR ({unit})</div>
+                 </div>
+               </div>
+            )}
 
-              {selectedExercise !== "Todos" && exerciseStats.has(selectedExercise) && (
-                <div className="text-right">
-                  <div className="text-indigo-400 font-black text-2xl">
-                    {convertW(exerciseStats.get(selectedExercise)!.currentORM)}
-                  </div>
-                  <div className="text-zinc-500 text-xs uppercase font-bold">PR ({unit})</div>
-                </div>
-              )}
-            </div>
-
-            <div className="h-64 w-full mb-2">
+            {/* GRÁFICA DINÁMICA */}
+            <div style={{ height: selectedExercise === "Todos" ? dynamicHeight : 300, width: '100%' }}>
               <ResponsiveContainer width="100%" height="100%">
                 {selectedExercise === "Todos" ? (
-                  <BarChart data={strengthProfileData} layout="vertical" margin={{ left: 0, right: 30 }}>
+                  // VISTA GLOBAL: GRÁFICA DE BARRAS
+                  <BarChart 
+                    data={filteredBarData} 
+                    layout="vertical" 
+                    margin={{ left: 0, right: 40, top: 10, bottom: 10 }}
+                  >
                     <XAxis type="number" hide />
                     <YAxis 
                       dataKey="name" 
@@ -261,36 +308,32 @@ export default function ProgressPage() {
                       interval={0}
                     />
                     <Tooltip 
-                      cursor={{fill: 'transparent'}}
+                      cursor={{fill: 'rgba(255,255,255,0.05)'}}
                       contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }} 
                       itemStyle={{ fontWeight: 'bold', color: '#fff' }} 
-                      formatter={(val: number) => [`${convertW(val)} ${unit}`, '1RM Máximo']} 
+                      formatter={barChartFormatter} 
                     />
-                    <Bar dataKey="orm" radius={[0, 4, 4, 0]} barSize={20}>
-                      {strengthProfileData.map((entry, index) => (
+                    <Bar dataKey="orm" radius={[0, 4, 4, 0]} barSize={24}>
+                      {filteredBarData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={BAR_COLORS[index % BAR_COLORS.length]} />
                       ))}
                     </Bar>
                   </BarChart>
                 ) : (
+                  // VISTA INDIVIDUAL: GRÁFICA DE LÍNEA
                   <LineChart data={currentChartData}>
                     <XAxis dataKey="date" stroke="#52525b" fontSize={10} tickMargin={8} />
                     <YAxis stroke="#52525b" fontSize={10} domain={['dataMin - 5', 'dataMax + 5']} hide />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }} 
-                      itemStyle={{ color: '#818cf8', fontWeight: 'bold' }} 
-                      formatter={(val: number) => [`${convertW(val)} ${unit}`, '1RM Est.']} 
-                    />
+                    <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }} itemStyle={{ color: '#818cf8', fontWeight: 'bold' }} formatter={lineChartFormatter} />
                     <Line type="monotone" dataKey="orm" stroke="#6366f1" strokeWidth={3} dot={{ r: 5, fill: '#09090b', stroke: '#6366f1', strokeWidth: 2 }} activeDot={{ r: 7 }} />
                   </LineChart>
                 )}
               </ResponsiveContainer>
             </div>
             
-            {selectedExercise === "Todos" && (
-              <p className="text-center text-[10px] text-zinc-600 mt-2">
-                *Mostrando tu mejor desempeño histórico en cada levantamiento.
-              </p>
+            {/* MENSAJE SI ESTÁ VACÍO */}
+            {selectedExercise === "Todos" && filteredBarData.length === 0 && (
+              <p className="text-center text-zinc-500 text-sm py-10">No hay ejercicios en esta categoría.</p>
             )}
           </div>
 
