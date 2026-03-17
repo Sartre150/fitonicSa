@@ -197,7 +197,7 @@ export default function ProgressPage() {
   };
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-50 p-6 pb-24">
+    <main className="min-h-screen overflow-x-hidden bg-zinc-950 text-zinc-50 p-6 pb-24">
       <header className="mb-6 flex justify-between items-end">
         <div>
           <h1 className="text-3xl font-black flex items-center gap-2">
@@ -237,7 +237,7 @@ export default function ProgressPage() {
             <ChevronDown className="absolute right-4 top-5 text-zinc-500 pointer-events-none" size={20} />
           </div>
 
-          <div className="bg-zinc-900 border border-zinc-800 p-4 sm:p-6 rounded-3xl mb-8">
+          <div className="bg-zinc-900 border border-zinc-800 p-4 sm:p-6 rounded-3xl mb-8 overflow-hidden">
             
             {/* CABECERA CON FILTROS (Solo visible en modo "Todos") */}
             {selectedExercise === "Todos" ? (
@@ -290,7 +290,16 @@ export default function ProgressPage() {
             )}
 
             {/* GRÁFICA DINÁMICA */}
-            <div style={{ height: selectedExercise === "Todos" ? dynamicHeight : 300, width: '100%' }}>
+            <div
+              className="w-full overflow-hidden"
+              style={{
+                height: selectedExercise === "Todos" ? dynamicHeight : 300,
+                width: "100%",
+                maxWidth: "100%",
+                touchAction: "pan-y pinch-zoom",
+                overscrollBehaviorX: "none",
+              }}
+            >
               <ResponsiveContainer width="100%" height="100%">
                 {selectedExercise === "Todos" ? (
                   // VISTA GLOBAL: GRÁFICA DE BARRAS
